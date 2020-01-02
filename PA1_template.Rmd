@@ -143,6 +143,12 @@ print(p3)
 
 ## Are there differences in activity patterns between weekdays and weekends?
 
+For the analysis of different patterns first an additional variable "day" is created containing the
+values "Weekday" or "Weekend" calculated from the "date" column. Then a panel plot is created
+showing the average number of steps per interval for weekdays and weekends respectively. This plot
+shows that while the overall pattern looks similar the large spike around interval 800 is much more
+present on weekdays than on the weekends. 
+
 ```{r weekday patterns}
 suppressPackageStartupMessages(library(tidyverse))
 suppressPackageStartupMessages(library(timeDate))
