@@ -3,23 +3,164 @@ title: "Reproducible Research: Peer Assessment 1"
 output: 
   html_document:
     keep_md: true
+editor_options: 
+  chunk_output_type: console
 ---
 
+Set some global options for processing the R markdown file
+```{r setopts, echo=TRUE}
+library(knitr, quietly=TRUE)
+opts_chunk$set(echo=TRUE, message=FALSE, warning=FALSE, error=FALSE, results="hide")
+
+```
 
 ## Loading and preprocessing the data
+Download zip-file from course repository and import included dataset into activity object. Results
+are cached to avoid extensive downloading of the datafile.
 
-
+```{r import data, cache=TRUE}
+suppressPackageStartupMessages(library(tidyverse))
+temp <- tempfile()
+download.file("https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2Factivity.zip",temp)
+activity <- read_csv(unz(temp, "activity.csv"),
+		     quote="\"",
+		     col_types = cols(date=col_date(format="%Y-%m-%d")),
+		     na = "NA")
+unlink(temp)
+```
 
 ## What is mean total number of steps taken per day?
+To calculate the mean and median of the steps taken per day and to produce a histogram of these
+values first the steps are summed up by day ignoring the NA values. From the resulting daily
+summaries the mean and median is calculated.
 
+```{r mean steps}
+suppressPackageStartupMessages(library(tidyverse))
+activity_by_day <- activity %>%
+	group_by(date) %>%
+	summarize(StepsSum = sum(steps, na.rm=TRUE))
 
+meanSteps <- round(mean(activity_by_day$StepsSum),0)
+medianSteps <- round(median(activity_by_day$StepsSum),0)
+```
+
+The (rounded) mean and median values for the steps taken per day are `r sprintf("%i", meanSteps)` and
+`r sprintf("%i", medianSteps)`, respectively. A histogram including markes of the mean and median
+is shown below.
+
+```{r steps histogram, results="asis"}
+p1 <- ggplot() + 
+	geom_histogram(data = activity_by_day, aes(x=StepsSum), binwidth=1200) +
+	geom_vline(aes(xintercept=meanSteps, colour="Mean")) + 
+	geom_vline(aes(xintercept=medianSteps, colour="Median")) + 
+	scale_x_continuous("Number of steps per day") +
+	scale_colour_discrete("Summary Values") + 
+	theme_bw()
+
+print(p1)
+```
 
 ## What is the average daily activity pattern?
+To plot the average daily activity pattern the dataset is first grouped by interval calculating
+the average numbers of steps. Subesquently the interval containing the maximum number of steps
+is identified.
 
+```{r summarize per interval}
+suppressPackageStartupMessages(library(tidyverse))
+
+activity_by_interval <- activity %>%
+	group_by(interval) %>%
+	summarize(MeanSteps = mean(steps, na.rm=TRUE))
+
+max_activity_by_interval <- activity_by_interval %>%
+	arrange(MeanSteps) %>%
+	dplyr::top_n(1)
+
+maxInterval <- max_activity_by_interval$interval
+
+```
+
+A plot of the average number of steps per interval is shown below highlighting interval
+`r maxInterval` containing the maximum average step count.
+
+```{r plot per interval, results="asis"}
+p2 <- ggplot() + 
+	geom_line(data = activity_by_interval, aes(x=interval, y=MeanSteps), group=1) +
+	geom_vline(xintercept=maxInterval, colour="red") + 
+	theme_bw()
+
+print(p2)
+```
 
 
 ## Imputing missing values
 
+Some donwstream analyses might be affected by the missing ("NA") values for some day/interval
+combinations in the dataset. In order to improve this the missing values are replaced by the mean
+of the respective interval across the whole dataset.
+
+```{r imputing missing values}
+suppressPackageStartupMessages(library(tidyverse))
+
+missingCount <- sum(is.na(activity$steps))
+missingPercent <- round(missingCount/(missingCount+sum(!is.na(activity$steps)))*100,0)
+
+activity_imputed <- activity %>%
+	left_join(activity_by_interval) %>%
+	mutate(steps_imputed = coalesce(steps,MeanSteps)) %>%
+	select(steps_imputed, date, interval) %>%
+	rename(steps = steps_imputed)
+
+activity_by_day_imputed <- activity_imputed %>%
+	group_by(date) %>%
+	summarize(StepsSum = sum(steps, na.rm=TRUE))
+
+meanStepsImputed <- round(mean(activity_by_day_imputed$StepsSum),0)
+medianStepsImputed <- round(median(activity_by_day_imputed$StepsSum),0)
+
+```
+
+In total the dataset included `r missingCount` NA values for the steps taken which corresponds to 
+`r missingPercent`% of the whole dataset. Using the imputation method described above the mean
+changes to `r sprintf("%i", meanStepsImputed)` (from `r sprintf("%i", meanSteps)`) while the
+median changes to `r sprintf("%i", medianStepsImputed)` (from `r sprintf("%i", medianSteps)`).
+
+Below the histogram created from the imputed dataset is shown together with the highlighted 
+mean and median values. Note that for the imputed dataset mean and median values are identical!
+
+```{r steps histogram 2, results="asis"}
+p3 <- ggplot() + 
+	geom_histogram(data = activity_by_day_imputed, aes(x=StepsSum), binwidth=1200) +
+	geom_vline(aes(xintercept=meanStepsImputed, colour="Mean")) + 
+	geom_vline(aes(xintercept=medianStepsImputed, colour="Median")) + 
+	scale_x_continuous("Number of steps per day") +
+	scale_colour_discrete("Summary Values") + 
+	theme_bw()
+
+print(p3)
+```
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+
+```{r weekday patterns}
+suppressPackageStartupMessages(library(tidyverse))
+suppressPackageStartupMessages(library(timeDate))
+
+activity_by_interval_and_day  <- activity_imputed %>%
+	mutate(day = case_when(isWeekend(date) ~ "Weekend",
+			       !isWeekend(date) ~ "Weekday")) %>%
+	group_by(interval, day) %>%
+	summarize(MeanSteps = mean(steps, na.rm=TRUE))
+
+```
+
+```{r plot per interval and weekday type, results="asis"}
+p4 <- ggplot() + 
+	geom_line(data = activity_by_interval_and_day, aes(x=interval, y=MeanSteps, group=day)) +
+	facet_wrap(~day, ncol=1) +
+	theme_bw()
+
+print(p4)
+```
+
